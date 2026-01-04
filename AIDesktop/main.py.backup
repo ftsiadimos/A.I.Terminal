@@ -1,0 +1,636 @@
+#!/usr/bin/env python3
+"""
+AI Terminal Desktop Application for GNOME
+GTK-based desktop version of the AI Terminal
+"""
+
+import gi
+gi.require_version('Gtk', '4.0')
+gi.require_version('Adw', '1')
+from gi.repository import Gtk, Adw, GLib, Gio, Pango
+import json
+import os
+import threading
+from ssh_client import SSHClient
+from ollama_client import OllamaClient
+from settings_manager import SettingsManager
+
+class AITerminalWindow(Adw.ApplicationWindow):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        self.set_default_size(1200, 800)
+        self.set_title("AI Terminal Desktop")
+        
+        # Initialize components
+        self.ssh_client = None
+        self.ollama_client = None
+        self.settings_manager = SettingsManager()
+        self.conversation_history = []
+        self.saved_settings = {}
+        
+        # Initialize entry references (will be created in settings dialog)
+        self.ssh_host_entry = None
+        self.ssh_port_entry = None
+        self.ssh_username_entry = None
+        self.ssh_password_entry = None
+        self.ollama_host_entry = None
+        self.ollama_model_entry = None
+        self.ai_name_entry = None
+        self.ai_role_entry = None
+        
+        # Build UI
+        self.build_ui()
+        
+        # Load saved settings
+        self.load_settings()
+        
+        # Welcome message
+        self.append_chat_message("SYSTEM", "Welcome to AI Terminal Desktop! Open Settings to configure SSH and Ollama connections.", "system")
+    
+    def build_ui(self):
+        """Build the main UI"""
+        # Main box
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self.set_content(main_box)
+        
+        # Header bar
+        header = Adw.HeaderBar()
+        main_box.append(header)
+        
+        # Title
+        header.set_title_widget(Gtk.Label(label="AI Terminal Desktop"))
+        
+        # Settings button
+        settings_button = Gtk.Button()
+        settings_button.set_icon_name("preferences-system-symbolic")
+        settings_button.connect("clicked", self.on_show_settings)
+        header.pack_end(settings_button)
+        
+        # Menu button
+        menu_button = Gtk.MenuButton()
+        menu_button.set_icon_name("open-menu-symbolic")
+        header.pack_end(menu_button)
+        
+        # Menu
+        menu = Gio.Menu()
+        menu.append("About", "app.about")
+        menu.append("Quit", "app.quit")
+        menu_button.set_menu_model(menu)
+        
+        # Status bar under header
+        status_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        status_box.set_margin_start(12)
+        status_box.set_margin_end(12)
+        status_box.set_margin_top(6)
+        status_box.set_margin_bottom(6)
+        status_box.add_css_class("toolbar")
+        
+        self.ssh_status_label = Gtk.Label(label="SSH: Not Connected")
+        self.ssh_status_label.add_css_class("dim-label")
+        status_box.append(self.ssh_status_label)
+        
+        status_box.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
+        
+        self.ollama_status_label = Gtk.Label(label="AI: Not Connected")
+        self.ollama_status_label.add_css_class("dim-label")
+        status_box.append(self.ollama_status_label)
+        
+        main_box.append(status_box)
+        main_box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+        
+        # Main content - chat interface
+        self.main_content = self.create_main_content()
+        main_box.append(self.main_content)
+    
+    def on_show_settings(self, button):
+        """Show settings dialog"""
+        dialog = Adw.PreferencesWindow(transient_for=self)
+        dialog.set_title("Settings")
+        
+        # SSH Settings Page
+        ssh_page = Adw.PreferencesPage()
+        ssh_page.set_title("SSH Connection")
+        ssh_page.set_icon_name("network-server-symbolic")
+        
+        ssh_group = Adw.PreferencesGroup()
+        ssh_group.set_title("SSH Server")
+        
+        self.ssh_host_entry = Adw.EntryRow()
+        self.ssh_host_entry.set_title("Host")
+        ssh_group.add(self.ssh_host_entry)
+        
+        self.ssh_port_entry = Adw.EntryRow()
+        self.ssh_port_entry.set_title("Port")
+        self.ssh_port_entry.set_text("22")
+        ssh_group.add(self.ssh_port_entry)
+        
+        self.ssh_username_entry = Adw.EntryRow()
+        self.ssh_username_entry.set_title("Username")
+        ssh_group.add(self.ssh_username_entry)
+        
+        self.ssh_password_entry = Adw.PasswordEntryRow()
+        self.ssh_password_entry.set_title("Password")
+        ssh_group.add(self.ssh_password_entry)
+        
+        ssh_page.add(ssh_group)
+        
+        # SSH Actions
+        ssh_action_group = Adw.PreferencesGroup()
+        
+        ssh_button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        ssh_button_box.set_halign(Gtk.Align.CENTER)
+        ssh_button_box.set_margin_top(12)
+        ssh_button_box.set_margin_bottom(12)
+        
+        self.ssh_connect_btn = Gtk.Button(label="Connect to SSH")
+        self.ssh_connect_btn.add_css_class("suggested-action")
+        self.ssh_connect_btn.connect("clicked", self.on_ssh_connect)
+        ssh_button_box.append(self.ssh_connect_btn)
+        
+        disconnect_btn = Gtk.Button(label="Disconnect")
+        disconnect_btn.connect("clicked", self.on_ssh_disconnect)
+        ssh_button_box.append(disconnect_btn)
+        
+        ssh_action_group.add(ssh_button_box)
+        ssh_page.add(ssh_action_group)
+        
+        dialog.add(ssh_page)
+        
+        # AI Settings Page
+        ai_page = Adw.PreferencesPage()
+        ai_page.set_title("AI Settings")
+        ai_page.set_icon_name("application-x-executable-symbolic")
+        
+        ollama_group = Adw.PreferencesGroup()
+        ollama_group.set_title("Ollama Configuration")
+        
+        self.ollama_host_entry = Adw.EntryRow()
+        self.ollama_host_entry.set_title("Ollama URL")
+        self.ollama_host_entry.set_text("http://localhost:11434")
+        ollama_group.add(self.ollama_host_entry)
+        
+        self.ollama_model_entry = Adw.EntryRow()
+        self.ollama_model_entry.set_title("Model")
+        self.ollama_model_entry.set_text("llama2")
+        ollama_group.add(self.ollama_model_entry)
+        
+        ai_page.add(ollama_group)
+        
+        # AI Personality
+        ai_personality_group = Adw.PreferencesGroup()
+        ai_personality_group.set_title("AI Personality")
+        
+        self.ai_name_entry = Adw.EntryRow()
+        self.ai_name_entry.set_title("AI Name")
+        self.ai_name_entry.set_text("Jarvis")
+        ai_personality_group.add(self.ai_name_entry)
+        
+        self.ai_role_entry = Adw.EntryRow()
+        self.ai_role_entry.set_title("AI Role")
+        self.ai_role_entry.set_text("Linux Expert")
+        ai_personality_group.add(self.ai_role_entry)
+        
+        ai_page.add(ai_personality_group)
+        
+        # Ollama Actions
+        ollama_action_group = Adw.PreferencesGroup()
+        
+        ollama_button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        ollama_button_box.set_halign(Gtk.Align.CENTER)
+        ollama_button_box.set_margin_top(12)
+        ollama_button_box.set_margin_bottom(12)
+        
+        self.ollama_connect_btn = Gtk.Button(label="Test Connection")
+        self.ollama_connect_btn.add_css_class("suggested-action")
+        self.ollama_connect_btn.connect("clicked", self.on_ollama_test)
+        ollama_button_box.append(self.ollama_connect_btn)
+        
+        save_btn = Gtk.Button(label="Save Settings")
+        save_btn.connect("clicked", lambda b: self.save_settings())
+        ollama_button_box.append(save_btn)
+        
+        ollama_action_group.add(ollama_button_box)
+        ai_page.add(ollama_action_group)
+        
+        dialog.add(ai_page)
+        
+        # Load current settings into dialog
+        self.load_settings_to_dialog()
+        
+        dialog.present()
+    
+    def create_main_content(self):
+        """Create the main content area with chat interface"""
+        content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        
+        # Chat display area with dark theme
+        self.chat_view = Gtk.TextView()
+        self.chat_view.set_editable(False)
+        self.chat_view.set_cursor_visible(False)
+        self.chat_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        self.chat_view.set_margin_start(16)
+        self.chat_view.set_margin_end(16)
+        self.chat_view.set_margin_top(16)
+        self.chat_view.set_margin_bottom(16)
+        
+        # Set monospace font for terminal-like appearance
+        font_desc = Pango.FontDescription("Monospace 12")
+        self.chat_view.override_font(font_desc)
+        
+        # Text buffer
+        self.chat_buffer = self.chat_view.get_buffer()
+        
+        # Create text tags for formatting - terminal-style colors
+        self.chat_buffer.create_tag("user", weight=Pango.Weight.BOLD, foreground="#58a6ff")
+        self.chat_buffer.create_tag("ai", weight=Pango.Weight.BOLD, foreground="#3fb950")
+        self.chat_buffer.create_tag("system", foreground="#f85149", style=Pango.Style.ITALIC)
+        self.chat_buffer.create_tag("command", family="monospace", foreground="#d2a8ff", weight=Pango.Weight.BOLD)
+        self.chat_buffer.create_tag("output", family="monospace", foreground="#8b949e")
+        self.chat_buffer.create_tag("prompt", foreground="#79c0ff")
+        
+        # Scrolled window for chat
+        chat_scroll = Gtk.ScrolledWindow()
+        chat_scroll.set_child(self.chat_view)
+        chat_scroll.set_vexpand(True)
+        content_box.append(chat_scroll)
+        
+        # Input area at bottom
+        input_frame = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        input_frame.add_css_class("toolbar")
+        
+        input_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        input_box.set_margin_start(16)
+        input_box.set_margin_end(16)
+        input_box.set_margin_top(12)
+        input_box.set_margin_bottom(12)
+        
+        # Terminal prompt symbol
+        prompt_label = Gtk.Label(label="$")
+        prompt_label.add_css_class("title-2")
+        input_box.append(prompt_label)
+        
+        # Input entry
+        self.input_entry = Gtk.Entry()
+        self.input_entry.set_placeholder_text("Enter command or natural language request...")
+        self.input_entry.set_hexpand(True)
+        self.input_entry.connect("activate", self.on_send_message)
+        input_box.append(self.input_entry)
+        
+        # Send button
+        self.send_btn = Gtk.Button(label="Send")
+        self.send_btn.add_css_class("suggested-action")
+        self.send_btn.connect("clicked", self.on_send_message)
+        input_box.append(self.send_btn)
+        
+        # Clear button
+        clear_btn = Gtk.Button(label="Clear")
+        clear_btn.connect("clicked", self.on_clear_chat)
+        input_box.append(clear_btn)
+        
+        input_frame.append(input_box)
+        content_box.append(input_frame)
+        
+        return content_box
+    
+    def append_chat_message(self, role, message, tag=None):
+        """Append a message to the chat display - terminal style"""
+        end_iter = self.chat_buffer.get_end_iter()
+        
+        # Add timestamp
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        self.chat_buffer.insert(end_iter, f"[{timestamp}] ")
+        
+        if tag:
+            self.chat_buffer.insert_with_tags_by_name(end_iter, f"{role}", tag)
+            self.chat_buffer.insert(end_iter, f": {message}\n")
+        else:
+            self.chat_buffer.insert(end_iter, f"{role}: {message}\n")
+        
+        # Add empty line for readability
+        self.chat_buffer.insert(end_iter, "\n")
+        
+        # Auto-scroll to bottom
+        mark = self.chat_buffer.create_mark(None, end_iter, False)
+        self.chat_view.scroll_to_mark(mark, 0.0, True, 0.0, 1.0)
+    
+    def on_ssh_connect(self, button):
+        """Handle SSH connection"""
+        host = self.ssh_host_entry.get_text()
+        port = int(self.ssh_port_entry.get_text() or "22")
+        username = self.ssh_username_entry.get_text()
+        password = self.ssh_password_entry.get_text()
+        
+        if not host or not username:
+            self.show_error_dialog("Please provide host and username")
+            return
+        
+        # Disable button during connectionSSH: ✓ Connected")
+            self.append_chat_message("SYSTEM", f"SSH connection established", "system")
+            self.save_settings()
+        else:
+            self.ssh_status_label.set_label("SSH: ✗ Failed")
+            self.show_error_dialog(f"SSH Connection failed: {message}")
+        
+        return False
+    
+    def on_ssh_disconnect(self, button):
+        """Disconnect from SSH"""
+        if self.ssh_client:
+            self.ssh_client.disconnect()
+            self.ssh_client = None
+        self.ssh_status_label.set_label("SSH: Not Connected")
+        self.append_chat_message("SYSTEM", "SSH connection closed", "system")
+            GLib.idle_add(self.on_ssh_connect_complete, success, message)
+        
+        thread = threading.Thread(target=connect_thread, daemon=True)
+        thread.start()
+    
+    def on_ssh_connect_complete(self, success, message):
+        """Handle SSH connection completion"""
+        self.ssh_connect_btn.set_sensitive(True)
+        
+        if success:
+            self.ssh_status_label.set_label("✓ Connected")
+            self.append_chat_message("System", f"Connected to SSH server", "system")
+            self.save_settings()
+        else:
+            self.ssh_status_label.set_label("✗ FAI: ✓ Ready")
+            self.append_chat_message("SYSTEM", "Ollama AI connection successful", "system")
+            self.save_settings()
+        else:
+            self.ollama_status_label.set_label("AI: 
+    def on_ollama_test(self, button):
+        """Test Ollama connection"""
+        ollama_url = self.ollama_host_entry.get_text()
+        
+        self.ollama_connect_btn.set_sensitive(False)
+        self.ollama_status_label.set_label("Testing...")
+        
+        def test_thread():
+            client = OllamaClient(host=ollama_url)
+            success, message = client.test_connection()
+            
+            GLib.append_chat_message("ERROR", "Not connected to SSH server. Open Settings to connect.", "system")
+            return
+        
+        # Clear input
+        self.input_entry.set_text("")
+        
+        # Add user message to chat
+        self.append_chat_message("USER", message, "user")
+        
+        # Add to conversation history
+        self.conversation_history.append({"role": "user", "content": message})
+        
+        # Disable send button during processing
+        self.send_btn.set_sensitive(False)
+        self.input_entry
+            self.ollama_status_label.set_label("✗ Failed")
+            self.show_error_dialog(f"Ollama connection failed: {message}")
+        
+        return False
+    
+    def on_send_message(self, widget):
+        """Handle sending a message"""
+        message = self.input_entry.get_text().strip()
+        if not message:
+            return
+        
+        if not self.ssh_client or not self.ssh_client.connected:
+            self.show_error_dialog("Please connect to SSH server first")
+            return
+         (use saved values or defaults)
+            ollama_url = self.saved_settings.get('ollama_url', 'http://localhost:11434')
+            model = self.saved_settings.get('ollama_model', 'llama2')
+            ai_name = self.saved_settings.get('ai_name', 'Jarvis')
+            ai_role = self.saved_settings.get('ai_role', 'Linux Expert'
+        self.append_chat_message("You", message, "user")
+        
+        # Add to conversation history
+        self.conversation_history.append({"role": "user", "content": message})
+        
+        # Disable send button during processing
+        self.send_btn.set_sensitive(False)
+        
+        # Process in background thread
+        def process_thread():
+            self.process_ai_command(message)
+        
+        thread = threading.Thread(target=process_thread, daemon=True)
+        thread.start()
+    
+    def process_ai_command(self, request_text):
+        """Process AI command and execute if needed"""
+        try:
+            # Get settings
+            ollama_url = self.ollama_host_entry.get_text()
+            model = self.ollama_model_entry.get_text()
+            ai_name = self.ai_name_entry.get_text()
+            ai_role = self.ai_role_entry.get_text()
+            
+            # Build context from history
+            context = ""
+            if self.conversation_history:
+                context = "\n\nPrevious conversation context:\n"
+                for msg in self.conversation_history[-5:]:
+                    role = msg.get('role', 'user')
+                    content = msg.get('content', '')
+                    context += f"{role}: {content}\n"
+            
+            # Create prompt for AI
+            prompt = f"""You are {ai_name}, a {ai_role}. YOU HAVE FULL SSH ACCESS TO THE SERVER and can run any command.
+{context}
+
+A user has now requested: "{request_text}"
+
+IMPORTANT INSTRUCTIONS:
+- You MUST respond in EXACTLY this format, with each line starting with the exact keywords below
+- Do NOT use JSON, do NOT use code blocks, do NOT deviate from this format
+- Each response must have these 3 lines:
+
+DECISION: [COMMAND if user wants you to run something, or CONVERSATION if just talking]
+COMMAND: [If DECISION is COMMAND, write the single shell command. If DECISION is CONVERSATION, write NONE]
+RESPONSE: [Your analysis or conversation response]
+
+Example 1 - Running a command:
+User: "show me the current directory"
+DECISION: COMMAND
+COMMAND: pwd
+RESPONSE: I'll show you the current directory using the pwd command.
+
+Example 2 - Conversation:
+User: "hello"
+DECISION: CONVERSATION.upper(), response, "ai")
+            
+            # Execute command if needed
+            if decision == "COMMAND" and command and command != "NONE":
+                GLib.idle_add(self.append_chat_message, "COMMAND", f"$ {command}", "command")
+                
+                success, output = self.ssh_client.execute_command(command)
+                
+                if success:
+                    # Truncate very long output
+                    if len(output) > 5000:
+                        output = output[:5000] + f"\n... (output truncated, {len(output)} chars total)"
+                    GLib.idle_add(self.append_chat_message, "OUTPUT", output or "(no output)", "output")
+                    self.conversation_history.append({
+                        "role": "assistant", 
+                        "content": f"Executed: {command}\nOutput: {output}"
+                    })
+                else:
+                    GLib.idle_add(self.append_chat_message, "ERROR", output, "system")
+            else:
+                self.conversation_history.append({
+                    "role": "assistant", 
+                    "content": response
+                })
+            
+        except Exception as e:
+            GLib.idle_add(self.on_ai_error, str(e))
+        finally:
+            GLib.idle_add(self.send_btn.set_sensitive, True)
+            GLib.idle_add(self.input_entry
+                    GLib.idle_add(self.append_chat_message, "Output", output or "(no output)", "output")
+                    self.conversation_history.append({
+                        "role": "assistant", 
+                        "content": f"Executed: {command}\nOutput: {output}"
+                    })
+                else:
+                    GLib.idle_add(self.append_chat_message, "Error", output, "system")
+            else:
+                self.conversation_history.append({
+                    "role": "assistant", 
+                    "content": response
+                })
+            
+        except Exception as e:
+            GLib.idle_add(self.on_ai_error, str(e))
+        finally:
+            GLib.idle_add(self.send_btn.set_sensitive, True)
+    
+    def parse_ai_response(self, response):
+        """Parse AI response to extract decision, command, and response"""
+        lines = response.strip().split('\n')
+        decision = "CONVERSATION"
+        command = "NONE"
+        ai_message = ""
+        
+        for line in lines:
+            if line.startswith("DECISION:"):
+                decision = line.replace("DECISION:", "").strip()
+            elif line.startswith("COMMAND:"):
+                command = line.replace("COMMAND:", "").strip()
+            elif line.startswith("RESPONSE:"):
+                ai_message = line.replace("RESPONSE:", "").strip()
+        
+        return decision, command, ai_message
+    
+    def on_ai_error(self, error_msg):
+        """Handle AI error"""
+        self.saved_settings = self.settings_manager.load_settings()
+    
+    def load_settings_to_dialog(self):
+        """Load settings into the settings dialog entries"""
+        if self.saved_settings:
+            self.ssh_host_entry.set_text(self.saved_settings.get('ssh_host', ''))
+            self.ssh_port_entry.set_text(str(self.saved_settings.get('ssh_port', 22)))
+        if self.ssh_host_entry:  # Only save if settings dialog has been opened
+            settings = {
+                'ssh_host': self.ssh_host_entry.get_text(),
+                'ssh_port': int(self.ssh_port_entry.get_text() or 22),
+                'ssh_username': self.ssh_username_entry.get_text(),
+                'ollama_url': self.ollama_host_entry.get_text(),
+                'ollama_model': self.ollama_model_entry.get_text(),
+                'ai_name': self.ai_name_entry.get_text(),
+                'ai_role': self.ai_role_entry.get_text()
+            }
+            
+            self.saved_settings = settings
+            )
+        dialog.add_response("ok", "OK")
+        dialog.present()
+    
+    def load_settings(self):
+        """Load saved settings"""
+        settings = self.settings_manager.load_settings()
+        
+        if settings:
+            self.ssh_host_entry.set_text(settings.get('ssh_host', ''))
+            self.ssh_port_entry.set_text(str(settings.get('ssh_port', 22)))
+            self.ssh_username_entry.set_text(settings.get('ssh_username', ''))
+            self.ollama_host_entry.set_text(settings.get('ollama_url', 'http://localhost:11434'))
+            self.ollama_model_entry.set_text(settings.get('ollama_model', 'llama2'))
+            self.ai_name_entry.set_text(settings.get('ai_name', 'Jarvis'))
+            self.ai_role_entry.set_text(settings.get('ai_role', 'Linux Expert'))
+    
+    def save_settings(self):
+        """Save current settings"""
+        settings = {
+            'ssh_host': self.ssh_host_entry.get_text(),
+            'ssh_port': int(self.ssh_port_entry.get_text() or 22),
+            'ssh_username': self.ssh_username_entry.get_text(),
+            'ollama_url': self.ollama_host_entry.get_text(),
+            'ollama_model': self.ollama_model_entry.get_text(),
+            'ai_name': self.ai_name_entry.get_text(),
+            'ai_role': self.ai_role_entry.get_text()
+        }
+        
+        self.settings_manager.save_settings(settings)
+
+
+class AITerminalApp(Adw.Application):
+    def __init__(self):
+        super().__init__(application_id="org.aiterminal.desktop",
+                        flags=Gio.ApplicationFlags.FLAGS_NONE)
+        
+        self.create_action('quit', self.on_quit)
+        self.create_action('about', self.on_about)
+        self.create_action('settings', self.on_settings)
+    
+    def do_activate(self):
+        """Activate the application"""
+        if self.props.active_window:
+            self.props.active_window.on_show_settings(None)ot win:
+            win = AITerminalWindow(application=self)
+        win.present()
+    
+    def create_action(self, name, callback):
+        """Create a GAction"""
+        action = Gio.SimpleAction.new(name, None)
+        action.connect("activate", callback)
+        self.add_action(action)
+    
+    def on_quit(self, action, param):
+        """Quit the application"""
+        self.quit()
+    
+    def on_about(self, action, param):
+        """Show about dialog"""
+        about = Adw.AboutWindow(
+            transient_for=self.props.active_window,
+            application_name="AI Terminal Desktop",
+            application_icon="utilities-terminal",
+            developer_name="AI Terminal Team",
+            version="1.0.0",
+            comments="Desktop AI Terminal with SSH and Ollama integration",
+            website="https://github.com/yourusername/aiterminal",
+            license_type=Gtk.License.MIT_X11
+        )
+        about.present()
+    
+    def on_settings(self, action, param):
+        """Show settings dialog"""
+        # Settings are in the sidebar - could create a separate dialog if needed
+        pass
+
+
+def main():
+    """Main entry point"""
+    app = AITerminalApp()
+    return app.run(None)
+
+
+if __name__ == "__main__":
+    main()
