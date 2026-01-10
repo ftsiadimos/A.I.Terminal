@@ -1142,7 +1142,7 @@ RESPONSE: Hello! I'm {ai_name}, your {ai_role}. How can I help you today?
                     except Exception:
                         max_output = MAX_OUTPUT_CHARS
                     if len(output) > max_output:
-                        output = output[:max_output] + f"\n... (output truncated, {len(output)} chars total)"
+                        output = output[:max_output] + f"\n... (output truncated, {len(output)} chars total)\n\nNote: output was truncated by the 'Max Output Characters' setting. You can increase this limit in Settings (Settings → AI Personality → Max Output Characters) to see more output."
                     GLib.idle_add(self.append_chat_message, "OUTPUT", output or "(no output)", "output")
                     
                     # Show updated directory if it changed
