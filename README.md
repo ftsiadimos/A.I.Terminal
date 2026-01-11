@@ -1,4 +1,4 @@
-# AI Terminal Desktop - GNOME Edition
+# 🤖 AI Terminal Desktop - GNOME Edition
 
 ![Screenshot](image.png)
 
