@@ -15,26 +15,56 @@ if [ ! -f /etc/fedora-release ]; then
     echo "Warning: This script is designed for Fedora. Continuing anyway..."
 fi
 
-# Install system dependencies
-echo "Installing system dependencies..."
+# Install runtime system dependencies (keeps installer minimal)
+echo "Installing runtime system dependencies..."
 sudo dnf install -y \
     gtk4 \
     libadwaita \
-    python3-devel \
-    python3-pip \
     python3-gobject \
-    gtk4-devel \
-    gobject-introspection-devel \
-    cairo-devel \
-    cairo-gobject-devel \
-    python3-cairo \
     python3-paramiko \
     python3-requests \
     python3-dotenv
 
 if [ $? -ne 0 ]; then
-    echo "Error: Failed to install system dependencies"
+    echo "Error: Failed to install runtime system dependencies"
     exit 1
+fi
+
+# Optional development and build-time packages
+# These are only necessary if you plan to build extensions, compile bindings, or develop locally.
+read -p "Install development packages (python3-devel, gtk4-devel, gobject-introspection-devel, cairo-devel, cairo-gobject-devel, python3-cairo)? (y/N) " install_dev
+if [[ "$install_dev" =~ ^[Yy]$ ]]; then
+    echo "Installing development packages..."
+    sudo dnf install -y \
+        python3-devel \
+        gtk4-devel \
+        gobject-introspection-devel \
+        cairo-devel \
+        cairo-gobject-devel \
+        python3-cairo
+    if [ $? -ne 0 ]; then
+        echo "Warning: Failed to install some development packages, continuing..."
+    else
+        echo "Development packages installed."
+    fi
+else
+    echo "Skipping development packages. If you plan to develop or build bindings, install them later." 
+fi
+
+# Optionally install pip (if missing) and Python packages
+read -p "Install pip and Python packages (paramiko, requests, python-dotenv) for user? (y/N) " install_python_pkgs
+if [[ "$install_python_pkgs" =~ ^[Yy]$ ]]; then
+    if ! command -v pip3 &> /dev/null; then
+        echo "pip3 not found, installing pip3..."
+        sudo dnf install -y python3-pip || true
+    fi
+    echo "Installing Python packages (user-level)..."
+    pip3 install --user paramiko requests python-dotenv
+    if [ $? -ne 0 ]; then
+        echo "Warning: Failed to install some Python dependencies with pip, but continuing..."
+    fi
+else
+    echo "Skipping pip/python package installation. You can install them later with: pip3 install --user paramiko requests python-dotenv"
 fi
 
 # Install additional Python packages user-level (not in venv)
