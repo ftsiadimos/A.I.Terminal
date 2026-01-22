@@ -45,6 +45,10 @@ class AITerminalWindow(Adw.ApplicationWindow):
         self.ollama_client = None
         self.settings_manager = SettingsManager()
         self.conversation_history = []
+        # Command history for input navigation (new feature)
+        self.command_history = []
+        self.history_position = -1  # -1 means not currently navigating history
+        self.current_input_text = ''
         self.saved_settings = {}
         self.ssh_servers = []  # List of saved SSH server configurations
         
@@ -494,13 +498,19 @@ class AITerminalWindow(Adw.ApplicationWindow):
         self.chat_view = Gtk.TextView()
         self.chat_view.set_editable(False)
         self.chat_view.set_cursor_visible(False)
-        self.chat_view.set_focusable(False)
+        # Allow the view to receive focus so users can click in and select text
+        self.chat_view.set_focusable(True)
         self.chat_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         self.chat_view.set_margin_start(16)
         self.chat_view.set_margin_end(16)
         self.chat_view.set_margin_top(16)
         self.chat_view.set_margin_bottom(16)
         self.chat_view.add_css_class("monospace")
+
+        # Add keyboard controller to support Ctrl+C for copying selections
+        chat_key_controller = Gtk.EventControllerKey()
+        chat_key_controller.connect("key-pressed", self.on_chat_key_pressed)
+        self.chat_view.add_controller(chat_key_controller)
         
         # Text buffer
         self.chat_buffer = self.chat_view.get_buffer()
@@ -634,13 +644,43 @@ class AITerminalWindow(Adw.ApplicationWindow):
         return False
     
     def on_key_pressed(self, controller, keyval, keycode, state):
-        """Handle key press events for tab completion"""
+        """Handle key press events for tab completion and history navigation"""
         from gi.repository import Gdk
         
-        # Check if Tab key was pressed
+        # Tab completion
         if keyval == Gdk.KEY_Tab:
             self.handle_tab_completion()
             return True  # Stop event propagation
+        
+        # History navigation: Up / Down arrows
+        elif keyval == Gdk.KEY_Up:
+            # If no history, nothing to show
+            if not self.command_history:
+                return True
+            # Start navigating from end if not already
+            if self.history_position == -1:
+                self.current_input_text = self.input_entry.get_text()
+                self.history_position = len(self.command_history) - 1
+            else:
+                if self.history_position > 0:
+                    self.history_position -= 1
+            # Set entry to the selected history item
+            self.input_entry.set_text(self.command_history[self.history_position])
+            self.input_entry.set_position(-1)  # move cursor to end
+            return True
+        elif keyval == Gdk.KEY_Down:
+            # If not navigating, nothing to do
+            if self.history_position == -1:
+                return True
+            if self.history_position < len(self.command_history) - 1:
+                self.history_position += 1
+                self.input_entry.set_text(self.command_history[self.history_position])
+            else:
+                # Restore typed text and stop navigating
+                self.history_position = -1
+                self.input_entry.set_text(self.current_input_text)
+            self.input_entry.set_position(-1)
+            return True
         else:
             # Reset completion state on any other key
             self.completions = []
@@ -1041,6 +1081,13 @@ class AITerminalWindow(Adw.ApplicationWindow):
             self.append_chat_message("ERROR", "Terminal not ready. Please wait or restart the application.", "system")
             return
         
+        # Add to command history (avoid consecutive duplicates)
+        if not self.command_history or self.command_history[-1] != message:
+            self.command_history.append(message)
+        # Reset history navigation state
+        self.history_position = -1
+        self.current_input_text = ''
+
         # Clear input
         self.input_entry.set_text("")
         
@@ -1086,26 +1133,32 @@ class AITerminalWindow(Adw.ApplicationWindow):
 A user has now requested: "{request_text}"
 
 IMPORTANT INSTRUCTIONS:
-- You MUST respond in EXACTLY this format, with each line starting with the exact keywords below
-- Do NOT use JSON, do NOT use code blocks, do NOT deviate from this format
+- You MUST respond in EXACTLY this format, with each line starting with the exact keywords below.
+- Do NOT use JSON, do NOT use code blocks, do NOT include any extra structured fields, and do NOT deviate from this format.
 - Each response must have these 3 lines:
 
-DECISION: [COMMAND if user wants you to run something, or CONVERSATION if just talking]
-COMMAND: [If DECISION is COMMAND, write the single shell command. If DECISION is CONVERSATION, write NONE]
-RESPONSE: [Your analysis or conversation response]
+DECISION: [COMMAND if the user asks you to run something, or CONVERSATION if no command is needed]
+COMMAND: [If DECISION is COMMAND, write the single shell command to run. If DECISION is CONVERSATION, write NONE]
+RESPONSE: [Your human-readable analysis or conversational reply]
 
-Example 1 - Running a command:
-User: "show me the current directory"
+RESPONSE GUIDELINES (what to include in RESPONSE):
+- Give a concise (1-3 sentence) explanation of why you chose the DECISION and what the COMMAND will do.
+- If DECISION is COMMAND, briefly describe the *expected* output and how to interpret it (1-2 sentences).
+- Important: After the command is executed by the system, you will be asked to comment on the *actual* command output. Prepare your RESPONSE so it can be extended later: summarize what to look for in the output and what would indicate success vs. failure.
+- If the command could be destructive or risky (e.g., use of rm, dd, shutdown, usermod, etc.), include a one-line safety warning in the RESPONSE.
+- If there is no expected output or the command typically produces no output, include a short one-line humorous remark you would add later (e.g., "No news is good news — looks like it succeeded quietly.").
+- Keep the RESPONSE polite, concise, and useful. Use plain text only.
+
+Examples:
+User: "what is the hostname"
 DECISION: COMMAND
-COMMAND: pwd
-RESPONSE: I'll show you the current directory using the pwd command.
+COMMAND: hostname
+RESPONSE: The hostname command retrieves the system's network identifier; it will print the hostname on one line.
 
-Example 2 - Conversation:
 User: "hello"
 DECISION: CONVERSATION
 COMMAND: NONE
-RESPONSE: Hello! I'm {ai_name}, your {ai_role}. How can I help you today?
-"""
+RESPONSE: Hi there! I'm ready to help you with any server tasks or questions you have."""
             
             # Get AI response
             client = OllamaClient(host=ollama_url, model=model)
@@ -1130,6 +1183,9 @@ RESPONSE: Hello! I'm {ai_name}, your {ai_role}. How can I help you today?
                 else:
                     GLib.idle_add(self.append_chat_message, "COMMAND", f"$ {command}", "command")
                 
+                # Record executed command in history (use idle_add to modify UI-thread state)
+                GLib.idle_add(self._add_command_to_history, command)
+                
                 success, output = self.ssh_client.execute_command(command)
                 
                 if success:
@@ -1150,9 +1206,33 @@ RESPONSE: Hello! I'm {ai_name}, your {ai_role}. How can I help you today?
                     if new_dir and new_dir != current_dir:
                         GLib.idle_add(self.append_chat_message, "SYSTEM", f"Directory changed to: {new_dir}", "system")
                     
+                    # Ask the AI to comment on the actual output (summarize, highlight errors, or make a light joke if empty)
+                    try:
+                        post_prompt = f"""You are {ai_name}, a {ai_role}. The command below was executed:
+{command}
+
+The output produced was:
+{output}
+
+In a concise (1-4 sentence) plain-text comment, do the following:
+- Summarize the most important information in the output.
+- If the output is empty or only whitespace, reply with a short light-hearted one-line joke and a confirmation that the command likely succeeded (or suggest a verification step).
+- If the output contains errors, point out the principal error lines and suggest a safe next step.
+- Do NOT include additional shell commands or structured data. Keep it helpful and to the point.
+"""
+                        post_success, post_response = client.generate(post_prompt)
+                        if post_success:
+                            analysis = post_response.strip()
+                        else:
+                            analysis = response if response else f"No analysis available: {post_response}"
+                    except Exception as e:
+                        analysis = response if response else f"No analysis available: {e}"
+                    
+                    # Append analysis to chat and history
+                    GLib.idle_add(self.append_chat_message, "ANALYSIS", analysis, "ai")
                     self.conversation_history.append({
                         "role": "assistant", 
-                        "content": f"Executed: {command}\nOutput: {output}"
+                        "content": f"Executed: {command}\nOutput: {output}\nAnalysis: {analysis}"
                     })
                 else:
                     GLib.idle_add(self.append_chat_message, "ERROR", output, "system")
@@ -1173,7 +1253,66 @@ RESPONSE: Hello! I'm {ai_name}, your {ai_role}. How can I help you today?
         self.input_entry.set_sensitive(True)
         self.input_entry.grab_focus()
         return False
-    
+
+    def _add_command_to_history(self, command):
+        """Add a command to the in-memory history (avoid consecutive duplicates).
+        Used via GLib.idle_add so return False to remove from idle loop after running.
+        """
+        try:
+            if not command:
+                return False
+            if not hasattr(self, 'command_history'):
+                self.command_history = []
+            if len(self.command_history) == 0 or self.command_history[-1] != command:
+                self.command_history.append(command)
+            # Reset navigation state
+            self.history_position = -1
+            self.current_input_text = ''
+        except Exception:
+            pass
+        return False
+
+    def on_chat_key_pressed(self, controller, keyval, keycode, state):
+        """Handle key presses in chat view (e.g., Ctrl+C to copy selection)."""
+        from gi.repository import Gdk
+
+        # Ctrl+C to copy selection
+        if (state & Gdk.ModifierType.CONTROL_MASK) and (keyval == Gdk.KEY_c or keyval == Gdk.KEY_C):
+            self._copy_selection_to_clipboard()
+            return True
+        return False
+
+    def _get_selected_text(self):
+        """Return the currently selected text in the chat buffer, or None."""
+        try:
+            has_sel, start, end = self.chat_buffer.get_selection_bounds()
+            if not has_sel:
+                return None
+            return self.chat_buffer.get_text(start, end, True)
+        except Exception:
+            return None
+
+    def _copy_selection_to_clipboard(self):
+        """Copy the selected text (if any) to the clipboard."""
+        try:
+            text = self._get_selected_text()
+            if not text:
+                return False
+            # Try Gtk.Clipboard first
+            try:
+                clipboard = Gtk.Clipboard.get_default(self.get_display())
+                clipboard.set_text(text, -1)
+            except Exception:
+                # Fallback: use Gdk clipboard if available
+                try:
+                    from gi.repository import Gdk
+                    gdk_clip = Gdk.Display.get_default().get_clipboard()
+                    gdk_clip.set_text(text, -1)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return False    
     def parse_ai_response(self, response):
         """Parse AI response to extract decision, command, and response"""
         lines = response.strip().split('\n')
