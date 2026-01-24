@@ -7,7 +7,7 @@ GTK-based desktop version of the AI Terminal
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Gtk, Adw, GLib, Gio, Pango
+from gi.repository import Gtk, Adw, GLib, Gio, Pango, Gdk
 import json
 import os
 import threading
@@ -148,7 +148,7 @@ class AITerminalWindow(Adw.ApplicationWindow):
             }
             
             .dim-label {
-                color: #00aa00;
+                color: #00ff00;
             }
             
             headerbar {
@@ -218,14 +218,15 @@ class AITerminalWindow(Adw.ApplicationWindow):
             }
             
             combobox {
-                background-color: #000000;
+                background-color: #1a1a1a;
                 color: #00ff00;
-                border: 1px solid #00ff00;
+                border: none;
                 border-radius: 0px;
             }
             
             combobox button {
                 background-color: #1a1a1a;
+                border: none;
                 border-radius: 0px;
             }
             
@@ -261,11 +262,19 @@ class AITerminalWindow(Adw.ApplicationWindow):
         # Title
         header.set_title_widget(Gtk.Label(label="AI Terminal Desktop"))
         
-        # Settings button
-        settings_button = Gtk.Button()
-        settings_button.set_icon_name("preferences-system-symbolic")
-        settings_button.connect("clicked", self.on_show_settings)
-        header.pack_end(settings_button)
+        # About button (rightmost button - pack first to be rightmost)
+        about_button = Gtk.Button()
+        about_button.set_icon_name("help-about-symbolic")
+        about_button.set_tooltip_text("About")
+        about_button.connect("clicked", self.on_show_about)
+        header.pack_end(about_button)
+        
+        # Split Terminal button (adds a split pane with a plain terminal)
+        self.split_term_btn = Gtk.Button()
+        self.split_term_btn.set_icon_name("view-split-left-right-symbolic")
+        self.split_term_btn.set_tooltip_text("Split main window with a plain terminal")
+        self.split_term_btn.connect("clicked", self.on_toggle_split_terminal)
+        header.pack_end(self.split_term_btn)
 
         # Open Terminal (plain, no AI) button
         self.open_term_btn = Gtk.Button()
@@ -274,23 +283,18 @@ class AITerminalWindow(Adw.ApplicationWindow):
         self.open_term_btn.connect("clicked", self.on_open_terminal)
         header.pack_end(self.open_term_btn)
 
-        # Split Terminal button (adds a split pane with a plain terminal)
-        self.split_term_btn = Gtk.Button()
-        self.split_term_btn.set_icon_name("view-split-left-right-symbolic")
-        self.split_term_btn.set_tooltip_text("Split main window with a plain terminal")
-        self.split_term_btn.connect("clicked", self.on_toggle_split_terminal)
-        header.pack_end(self.split_term_btn)
+        # Shortcuts button
+        shortcuts_button = Gtk.Button()
+        shortcuts_button.set_icon_name("preferences-desktop-keyboard-shortcuts-symbolic")
+        shortcuts_button.set_tooltip_text("Show keyboard shortcuts")
+        shortcuts_button.connect("clicked", self.on_show_shortcuts)
+        header.pack_end(shortcuts_button)
         
-        # Menu button
-        menu_button = Gtk.MenuButton()
-        menu_button.set_icon_name("open-menu-symbolic")
-        header.pack_end(menu_button)
-        
-        # Menu
-        menu = Gio.Menu()
-        menu.append("About", "app.about")
-        menu.append("Quit", "app.quit")
-        menu_button.set_menu_model(menu)
+        # Settings button
+        settings_button = Gtk.Button()
+        settings_button.set_icon_name("preferences-system-symbolic")
+        settings_button.connect("clicked", self.on_show_settings)
+        header.pack_end(settings_button)
         
         # Status bar under header
         status_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
@@ -329,6 +333,12 @@ class AITerminalWindow(Adw.ApplicationWindow):
         # Main content - chat interface
         self.main_content = self.create_main_content()
         main_box.append(self.main_content)
+        
+        # Setup keyboard shortcuts
+        self.setup_keyboard_shortcuts()
+        
+        # Setup keyboard shortcuts
+        self.setup_keyboard_shortcuts()
     
     def on_show_settings(self, button):
         """Show settings dialog"""
@@ -503,6 +513,308 @@ class AITerminalWindow(Adw.ApplicationWindow):
         
         dialog.set_modal(False)  # Make dialog non-modal so chat is visible
         dialog.present()
+    
+    def setup_keyboard_shortcuts(self):
+        """Setup keyboard shortcuts for the application"""
+        # Create shortcut controller
+        shortcut_controller = Gtk.ShortcutController()
+        self.add_controller(shortcut_controller)
+        
+        # Split terminal shortcuts
+        shortcut_controller.add_shortcut(
+            Gtk.Shortcut.new(
+                Gtk.KeyvalTrigger.new(Gdk.KEY_t, Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SHIFT_MASK),
+                Gtk.CallbackAction.new(self._shortcut_toggle_split)
+            )
+        )
+        
+        # Open new terminal window
+        shortcut_controller.add_shortcut(
+            Gtk.Shortcut.new(
+                Gtk.KeyvalTrigger.new(Gdk.KEY_n, Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SHIFT_MASK),
+                Gtk.CallbackAction.new(self._shortcut_new_terminal)
+            )
+        )
+        
+        # Focus main input
+        shortcut_controller.add_shortcut(
+            Gtk.Shortcut.new(
+                Gtk.KeyvalTrigger.new(Gdk.KEY_l, Gdk.ModifierType.ALT_MASK),
+                Gtk.CallbackAction.new(self._shortcut_focus_main)
+            )
+        )
+        
+        # Focus split terminal
+        shortcut_controller.add_shortcut(
+            Gtk.Shortcut.new(
+                Gtk.KeyvalTrigger.new(Gdk.KEY_r, Gdk.ModifierType.ALT_MASK),
+                Gtk.CallbackAction.new(self._shortcut_focus_split)
+            )
+        )
+        
+        # Clear chat
+        shortcut_controller.add_shortcut(
+            Gtk.Shortcut.new(
+                Gtk.KeyvalTrigger.new(Gdk.KEY_k, Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SHIFT_MASK),
+                Gtk.CallbackAction.new(self._shortcut_clear_chat)
+            )
+        )
+        
+        # Show settings
+        shortcut_controller.add_shortcut(
+            Gtk.Shortcut.new(
+                Gtk.KeyvalTrigger.new(Gdk.KEY_comma, Gdk.ModifierType.CONTROL_MASK),
+                Gtk.CallbackAction.new(self._shortcut_show_settings)
+            )
+        )
+        
+        # Show shortcuts
+        shortcut_controller.add_shortcut(
+            Gtk.Shortcut.new(
+                Gtk.KeyvalTrigger.new(Gdk.KEY_slash, Gdk.ModifierType.CONTROL_MASK),
+                Gtk.CallbackAction.new(self._shortcut_show_shortcuts)
+            )
+        )
+        
+        # Scroll to top
+        shortcut_controller.add_shortcut(
+            Gtk.Shortcut.new(
+                Gtk.KeyvalTrigger.new(Gdk.KEY_Home, Gdk.ModifierType.CONTROL_MASK),
+                Gtk.CallbackAction.new(self._shortcut_scroll_top)
+            )
+        )
+        
+        # Scroll to bottom
+        shortcut_controller.add_shortcut(
+            Gtk.Shortcut.new(
+                Gtk.KeyvalTrigger.new(Gdk.KEY_End, Gdk.ModifierType.CONTROL_MASK),
+                Gtk.CallbackAction.new(self._shortcut_scroll_bottom)
+            )
+        )
+    
+    def _shortcut_toggle_split(self, widget, args):
+        """Toggle split terminal via keyboard shortcut"""
+        self.on_toggle_split_terminal(None)
+        return True
+    
+    def _shortcut_new_terminal(self, widget, args):
+        """Open new terminal via keyboard shortcut"""
+        self.on_open_terminal(None)
+        return True
+    
+    def _shortcut_focus_main(self, widget, args):
+        """Focus main input via keyboard shortcut"""
+        if hasattr(self, 'input_entry'):
+            self.input_entry.grab_focus()
+        return True
+    
+    def _shortcut_focus_split(self, widget, args):
+        """Focus split terminal via keyboard shortcut"""
+        if hasattr(self, 'split_terminal_pane') and self.split_terminal_pane:
+            self.split_terminal_pane.term_entry.grab_focus()
+        return True
+    
+    def _shortcut_clear_chat(self, widget, args):
+        """Clear chat via keyboard shortcut"""
+        self.on_clear_chat(None)
+        return True
+    
+    def _shortcut_show_settings(self, widget, args):
+        """Show settings via keyboard shortcut"""
+        self.on_show_settings(None)
+        return True
+    
+    def _shortcut_show_shortcuts(self, widget, args):
+        """Show shortcuts via keyboard shortcut"""
+        self.on_show_shortcuts(None)
+        return True
+    
+    def _shortcut_scroll_top(self, widget, args):
+        """Scroll to top via keyboard shortcut"""
+        self.scroll_to_top()
+        return True
+    
+    def _shortcut_scroll_bottom(self, widget, args):
+        """Scroll to bottom via keyboard shortcut"""
+        self.scroll_to_bottom()
+        return True
+    
+    def on_show_shortcuts(self, button):
+        """Show keyboard shortcuts dialog"""
+        shortcuts_window = Adw.PreferencesWindow(transient_for=self)
+        shortcuts_window.set_title("Keyboard Shortcuts")
+        shortcuts_window.set_default_size(500, 600)
+        
+        # Main shortcuts page
+        shortcuts_page = Adw.PreferencesPage()
+        shortcuts_page.set_title("Shortcuts")
+        shortcuts_page.set_icon_name("preferences-desktop-keyboard-shortcuts-symbolic")
+        
+        # Terminal Management group
+        terminal_group = Adw.PreferencesGroup()
+        terminal_group.set_title("Terminal Management")
+        
+        # Split terminal shortcut
+        split_row = Adw.ActionRow()
+        split_row.set_title("Toggle Split Terminal")
+        split_row.set_subtitle("Open or close the split terminal pane")
+        split_label = Gtk.Label(label="Ctrl+Shift+T")
+        split_label.add_css_class("dim-label")
+        split_row.add_suffix(split_label)
+        terminal_group.add(split_row)
+        
+        # New terminal shortcut
+        new_term_row = Adw.ActionRow()
+        new_term_row.set_title("New Terminal Window")
+        new_term_row.set_subtitle("Open a new terminal window")
+        new_term_label = Gtk.Label(label="Ctrl+Shift+N")
+        new_term_label.add_css_class("dim-label")
+        new_term_row.add_suffix(new_term_label)
+        terminal_group.add(new_term_row)
+        
+        shortcuts_page.add(terminal_group)
+        
+        # Navigation group
+        nav_group = Adw.PreferencesGroup()
+        nav_group.set_title("Navigation")
+        
+        # Focus main terminal
+        focus_main_row = Adw.ActionRow()
+        focus_main_row.set_title("Focus Main Terminal")
+        focus_main_row.set_subtitle("Switch focus to the main AI terminal input")
+        focus_main_label = Gtk.Label(label="Alt+L")
+        focus_main_label.add_css_class("dim-label")
+        focus_main_row.add_suffix(focus_main_label)
+        nav_group.add(focus_main_row)
+        
+        # Focus split terminal
+        focus_split_row = Adw.ActionRow()
+        focus_split_row.set_title("Focus Split Terminal")
+        focus_split_row.set_subtitle("Switch focus to the split terminal input")
+        focus_split_label = Gtk.Label(label="Alt+R")
+        focus_split_label.add_css_class("dim-label")
+        focus_split_row.add_suffix(focus_split_label)
+        nav_group.add(focus_split_row)
+        
+        # Scroll to top
+        scroll_top_row = Adw.ActionRow()
+        scroll_top_row.set_title("Scroll to Top")
+        scroll_top_row.set_subtitle("Scroll chat to the beginning")
+        scroll_top_label = Gtk.Label(label="Ctrl+Home")
+        scroll_top_label.add_css_class("dim-label")
+        scroll_top_row.add_suffix(scroll_top_label)
+        nav_group.add(scroll_top_row)
+        
+        # Scroll to bottom
+        scroll_bottom_row = Adw.ActionRow()
+        scroll_bottom_row.set_title("Scroll to Bottom")
+        scroll_bottom_row.set_subtitle("Scroll chat to the end")
+        scroll_bottom_label = Gtk.Label(label="Ctrl+End")
+        scroll_bottom_label.add_css_class("dim-label")
+        scroll_bottom_row.add_suffix(scroll_bottom_label)
+        nav_group.add(scroll_bottom_row)
+        
+        shortcuts_page.add(nav_group)
+        
+        # Application group
+        app_group = Adw.PreferencesGroup()
+        app_group.set_title("Application")
+        
+        # Clear chat
+        clear_row = Adw.ActionRow()
+        clear_row.set_title("Clear Chat")
+        clear_row.set_subtitle("Clear the chat history")
+        clear_label = Gtk.Label(label="Ctrl+Shift+K")
+        clear_label.add_css_class("dim-label")
+        clear_row.add_suffix(clear_label)
+        app_group.add(clear_row)
+        
+        # Show settings
+        settings_row = Adw.ActionRow()
+        settings_row.set_title("Show Settings")
+        settings_row.set_subtitle("Open the settings dialog")
+        settings_label = Gtk.Label(label="Ctrl+,")
+        settings_label.add_css_class("dim-label")
+        settings_row.add_suffix(settings_label)
+        app_group.add(settings_row)
+        
+        # Show shortcuts
+        shortcuts_row = Adw.ActionRow()
+        shortcuts_row.set_title("Show Shortcuts")
+        shortcuts_row.set_subtitle("Display this shortcuts help")
+        shortcuts_label = Gtk.Label(label="Ctrl+/")
+        shortcuts_label.add_css_class("dim-label")
+        shortcuts_row.add_suffix(shortcuts_label)
+        app_group.add(shortcuts_row)
+        
+        shortcuts_page.add(app_group)
+        
+        # Built-in shortcuts group
+        builtin_group = Adw.PreferencesGroup()
+        builtin_group.set_title("Built-in Shortcuts")
+        
+        # Tab completion
+        tab_row = Adw.ActionRow()
+        tab_row.set_title("Tab Completion")
+        tab_row.set_subtitle("Auto-complete commands and file names")
+        tab_label = Gtk.Label(label="Tab")
+        tab_label.add_css_class("dim-label")
+        tab_row.add_suffix(tab_label)
+        builtin_group.add(tab_row)
+        
+        # Command history
+        history_row = Adw.ActionRow()
+        history_row.set_title("Command History")
+        history_row.set_subtitle("Navigate through previous commands")
+        history_label = Gtk.Label(label="↑ / ↓")
+        history_label.add_css_class("dim-label")
+        history_row.add_suffix(history_label)
+        builtin_group.add(history_row)
+        
+        # Copy selection
+        copy_row = Adw.ActionRow()
+        copy_row.set_title("Copy Selection")
+        copy_row.set_subtitle("Copy selected text in terminal or chat")
+        copy_label = Gtk.Label(label="Ctrl+C")
+        copy_label.add_css_class("dim-label")
+        copy_row.add_suffix(copy_label)
+        builtin_group.add(copy_row)
+        
+        # Interrupt command
+        interrupt_row = Adw.ActionRow()
+        interrupt_row.set_title("Interrupt Command")
+        interrupt_row.set_subtitle("Stop running command in terminal")
+        interrupt_label = Gtk.Label(label="Ctrl+C")
+        interrupt_label.add_css_class("dim-label")
+        interrupt_row.add_suffix(interrupt_label)
+        builtin_group.add(interrupt_row)
+        
+        # Clear terminal
+        clear_term_row = Adw.ActionRow()
+        clear_term_row.set_title("Clear Terminal")
+        clear_term_row.set_subtitle("Clear terminal output (in split terminal)")
+        clear_term_label = Gtk.Label(label="Ctrl+L")
+        clear_term_label.add_css_class("dim-label")
+        clear_term_row.add_suffix(clear_term_label)
+        builtin_group.add(clear_term_row)
+        
+        shortcuts_page.add(builtin_group)
+        
+        shortcuts_window.add(shortcuts_page)
+        shortcuts_window.set_modal(False)
+        shortcuts_window.present()
+    
+    def on_show_about(self, button):
+        """Show about dialog"""
+        about_dialog = Adw.AboutWindow(transient_for=self)
+        about_dialog.set_application_name("AI Terminal Desktop")
+        about_dialog.set_version("2.0.0")
+        about_dialog.set_developer_name("AI Terminal Team")
+        about_dialog.set_copyright("© 2026 AI Terminal Desktop")
+        about_dialog.set_comments("An AI-powered terminal interface with SSH support and intelligent command assistance.")
+        about_dialog.set_website("https://github.com/your-repo/aiterminal")
+        about_dialog.set_license_type(Gtk.License.MIT_X11)
+        about_dialog.present()
     
     def create_main_content(self):
         """Create the main content area with chat interface"""
@@ -863,11 +1175,8 @@ class AITerminalWindow(Adw.ApplicationWindow):
                 else:
                     self.term_status.set_label("Following AI: Local")
                 cwd = getattr(client, 'current_directory', None)
-                self._append_output("Plain Terminal - following AI terminal connection\n", tag="system")
                 if cwd:
-                    self._append_output(f"Working directory: {cwd}\n", tag="cwd")
-                self._append_output("Type commands and press Enter. Use ↑↓ for history, Tab for completion, Ctrl+L to clear.\n", tag="system")
-                self._append_output("Use Ctrl+C to interrupt running commands (like ping).\n\n", tag="system")
+                    self._append_output("Limited terminal functionality - under construction...\n", tag="system")
             else:
                 self.term_status.set_label("Not connected")
                 self._append_output("Waiting for AI terminal to connect...\n", tag="system")
@@ -902,6 +1211,21 @@ class AITerminalWindow(Adw.ApplicationWindow):
             self.history_position = -1
             self.current_input_text = ''
 
+            # Check for local commands first
+            if cmd.lower() in ['clear', 'cls']:
+                # Handle clear command locally
+                cwd = getattr(client, 'current_directory', None)
+                if cwd:
+                    self._append_output(f"[{cwd}]$ ", tag="cwd")
+                else:
+                    self._append_output("$ ", tag="cwd")
+                self._append_output(f"{cmd}\n", tag="command")
+                self.term_entry.set_text("")
+                
+                # Clear the terminal output
+                self.term_buffer.set_text("")
+                return
+
             # Append command to pane output
             cwd = getattr(client, 'current_directory', None)
             if cwd:
@@ -921,13 +1245,22 @@ class AITerminalWindow(Adw.ApplicationWindow):
 
             def run_thread():
                 try:
-                    # Use streaming execution if available
-                    if hasattr(client, '_execute_streaming'):
-                        ok, out = client.execute_command(cmd, output_callback=output_callback)
-                    else:
-                        ok, out = client.execute_command(cmd)
-                        if out:
-                            GLib.idle_add(self._append_output, out, "output")
+                    # Check for commands that won't work in this environment
+                    interactive_commands = ['vim', 'nano', 'emacs', 'vi', 'top', 'htop', 'less', 'more', 'man', 'watch', 'tmux', 'screen', 'bash', 'fish', 'zsh', 'sh', 'csh', 'tcsh', 'ksh', 'ssh', 'sftp', 'ftp', 'irssi', 'mc', 'ncdu', 'alsamixer', 'pulsemixer', 'ipython', 'python', 'node', 'ruby', 'irb', 'lua']
+                    if cmd.split()[0] in interactive_commands:
+                        command_type = "shell" if cmd.split()[0] in ['bash', 'fish', 'zsh', 'sh', 'csh', 'tcsh', 'ksh'] else "interactive command"
+                        GLib.idle_add(self._append_output, f"⚠️  '{cmd.split()[0]}' is an {command_type} that cannot run in this terminal.\n", "error")
+                        if command_type == "shell":
+                            GLib.idle_add(self._append_output, f"💡 You're already in a shell environment. Run commands directly or use the AI terminal for help.\n", "system")
+                        else:
+                            GLib.idle_add(self._append_output, f"💡 Try using 'cat' to view files, or use the AI terminal for suggestions.\n", "system")
+                        GLib.idle_add(self._on_command_complete, False, cmd, cwd, client, f"Interactive command not supported")
+                        return
+                    
+                    # Execute command and get full output
+                    ok, out = client.execute_command(cmd)
+                    if out:
+                        GLib.idle_add(self._append_output, out, "output")
                     GLib.idle_add(self._on_command_complete, ok, cmd, cwd, client)
                 except Exception as e:
                     GLib.idle_add(self._on_command_complete, False, cmd, cwd, client, str(e))
@@ -946,6 +1279,8 @@ class AITerminalWindow(Adw.ApplicationWindow):
             
             if error:
                 self._append_output(f"Error: {error}\n", tag="error")
+            elif not ok:
+                self._append_output(f"❌ Command '{cmd}' failed or returned non-zero exit status.\n", tag="error")
             elif ok:
                 # Check if directory changed
                 new_cwd = getattr(client, 'current_directory', None)
@@ -1120,7 +1455,7 @@ class AITerminalWindow(Adw.ApplicationWindow):
             self.remove_split_terminal()
             # Restore split button state on main header if available
             try:
-                self.split_term_btn.set_label("Split Terminal")
+                self.split_term_btn.set_icon_name("view-split-left-right-symbolic")
                 self.split_term_btn.set_tooltip_text("Split main window with a plain terminal")
             except Exception:
                 pass
@@ -1134,7 +1469,7 @@ class AITerminalWindow(Adw.ApplicationWindow):
         parent_box.remove(self.main_content)
 
         paned.set_start_child(self.main_content)
-        term_pane = self.TerminalPane(self, show_close=True)
+        term_pane = self.TerminalPane(self, show_close=False)
         # Mark that this pane is part of split so close button will remove it
         term_pane.parent_split = paned
         paned.set_end_child(term_pane)
@@ -1144,7 +1479,7 @@ class AITerminalWindow(Adw.ApplicationWindow):
         self.split_terminal_pane = term_pane
         # Update main header button state
         try:
-            self.split_term_btn.set_label("Close Split")
+            self.split_term_btn.set_icon_name("view-restore-symbolic")
             self.split_term_btn.set_tooltip_text("Close split terminal")
         except Exception:
             pass
@@ -1185,7 +1520,7 @@ class AITerminalWindow(Adw.ApplicationWindow):
         
         # Restore split button state on main header if possible
         try:
-            self.split_term_btn.set_label("Split Terminal")
+            self.split_term_btn.set_icon_name("view-split-left-right-symbolic")
             self.split_term_btn.set_tooltip_text("Split main window with a plain terminal")
         except Exception:
             pass
@@ -1762,30 +2097,19 @@ A user has now requested: "{request_text}"
 IMPORTANT INSTRUCTIONS:
 - You MUST respond in EXACTLY this format, with each line starting with the exact keywords below.
 - Do NOT use JSON, do NOT use code blocks, do NOT include any extra structured fields, and do NOT deviate from this format.
-- Each response must have these 3 lines:
+- Each response must have these 2 lines:
 
-DECISION: [COMMAND if the user asks you to run something, or CONVERSATION if no command is needed]
-COMMAND: [If DECISION is COMMAND, write the single shell command to run. If DECISION is CONVERSATION, write NONE]
+COMMAND: [If the user asks you to run something, write the single shell command to run. If no command is needed, write NONE]
 RESPONSE: [Your human-readable analysis or conversational reply]
 
 RESPONSE GUIDELINES (what to include in RESPONSE):
-- Give a concise (1-3 sentence) explanation of why you chose the DECISION and what the COMMAND will do.
-- If DECISION is COMMAND, briefly describe the *expected* output and how to interpret it (1-2 sentences).
+- Give a concise (1-3 sentence) explanation of what the COMMAND will do, or provide a helpful conversational response.
+- If COMMAND is not NONE, briefly describe the *expected* output and how to interpret it (1-2 sentences).
 - Important: After the command is executed by the system, you will be asked to comment on the *actual* command output. Prepare your RESPONSE so it can be extended later: summarize what to look for in the output and what would indicate success vs. failure.
 - If the command could be destructive or risky (e.g., use of rm, dd, shutdown, usermod, etc.), include a one-line safety warning in the RESPONSE.
 - If there is no expected output or the command typically produces no output, include a short one-line humorous remark you would add later (e.g., "No news is good news — looks like it succeeded quietly.").
-- Keep the RESPONSE polite, concise, and useful. Use plain text only.
-
-Examples:
-User: "what is the hostname"
-DECISION: COMMAND
-COMMAND: hostname
-RESPONSE: The hostname command retrieves the system's network identifier; it will print the hostname on one line.
-
-User: "hello"
-DECISION: CONVERSATION
-COMMAND: NONE
-RESPONSE: Hi there! I'm ready to help you with any server tasks or questions you have."""
+- If no command is needed, engage in helpful conversation, provide information, or include jokes when appropriate.
+- Keep the RESPONSE polite, concise, and useful. Use plain text only."""
             
             # Get AI response
             client = OllamaClient(host=ollama_url, model=model)
@@ -1796,13 +2120,10 @@ RESPONSE: Hi there! I'm ready to help you with any server tasks or questions you
                 return
             
             # Parse AI response
-            decision, command, response = self.parse_ai_response(ai_response)
-            
-            # Add AI response to chat
-            GLib.idle_add(self.append_chat_message, ai_name.upper(), response, "ai")
+            command, response = self.parse_ai_response(ai_response)
             
             # Execute command if needed
-            if decision == "COMMAND" and command and command != "NONE":
+            if command and command != "NONE":
                 # Show current directory with command
                 current_dir = getattr(self.ssh_client, 'current_directory', None)
                 if current_dir:
@@ -1856,7 +2177,7 @@ In a concise (1-4 sentence) plain-text comment, do the following:
                         analysis = response if response else f"No analysis available: {e}"
                     
                     # Append analysis to chat and history
-                    GLib.idle_add(self.append_chat_message, "ANALYSIS", analysis, "ai")
+                    GLib.idle_add(self.append_chat_message, ai_name.upper(), analysis, "ai")
                     self.conversation_history.append({
                         "role": "assistant", 
                         "content": f"Executed: {command}\nOutput: {output}\nAnalysis: {analysis}"
@@ -1864,6 +2185,8 @@ In a concise (1-4 sentence) plain-text comment, do the following:
                 else:
                     GLib.idle_add(self.append_chat_message, "ERROR", output, "system")
             else:
+                # No command to execute - this is a conversation
+                GLib.idle_add(self.append_chat_message, ai_name.upper(), response, "ai")
                 self.conversation_history.append({
                     "role": "assistant", 
                     "content": response
@@ -1941,18 +2264,14 @@ In a concise (1-4 sentence) plain-text comment, do the following:
             pass
         return False    
     def parse_ai_response(self, response):
-        """Parse AI response to extract decision, command, and response"""
+        """Parse AI response to extract command and response"""
         lines = response.strip().split('\n')
-        decision = "CONVERSATION"
         command = "NONE"
         ai_message = ""
         response_started = False
         
         for line in lines:
-            if line.startswith("DECISION:"):
-                decision = line.replace("DECISION:", "").strip()
-                response_started = False
-            elif line.startswith("COMMAND:"):
+            if line.startswith("COMMAND:"):
                 command = line.replace("COMMAND:", "").strip()
                 response_started = False
             elif line.startswith("RESPONSE:"):
@@ -1962,7 +2281,7 @@ In a concise (1-4 sentence) plain-text comment, do the following:
                 # Continue capturing lines that are part of the response
                 ai_message += "\n" + line
         
-        return decision, command, ai_message
+        return command, ai_message
     
     def on_ai_error(self, error_msg):
         """Handle AI error"""
