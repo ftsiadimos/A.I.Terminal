@@ -29,24 +29,6 @@ A polished GNOME desktop application (built with GTK4 and Libadwaita) that combi
 - **Settings Persistence**: Save connection settings for quick access
 
 
-## News ✅
-
-### Release 2.0.0 — Plain & Split Terminal (2026-01-23)
-
-Highlights:
-
-- **Plain Terminal**: A new full-featured terminal pane/window that mirrors the AI terminal's connection. It:
-  - Shares the AI terminal's SSH or local connection (no separate "connect" bar or duplicated connection state).
-  - Supports true terminal behavior: PTY support for remote shells, streaming output for long-running commands (e.g., ping), and proper Ctrl+C interrupt handling.
-  - Implements process-group-aware local execution so interrupts and kills behave like a normal terminal.
-  - Includes command history, tab completion, and a clear button for fast workflows.
-
-- **Split Terminal**: Toggle a split view inside the main window to show the plain terminal side-by-side with the AI chat. It:
-  - Reuses the same connection as the AI terminal and keeps status synced.
-  - Allows closing the split and restores the original layout cleanly.
-  - Keeps focus behavior and keyboard shortcuts consistent with the main UI.
-
-
 ## Installation
 
 ### RPM Package Download (Recommended)
@@ -188,6 +170,18 @@ chmod +x main.py
    - Type natural language requests in the input field
    - The AI will interpret and execute commands on your SSH server
    - View command output and AI responses in the chat area
+
+**AI behaviour notes:**
+   - By default the assistant only runs when your input does **not** look like a
+     plain shell command.  For example, `ls -la` is executed directly without
+     consulting the model, but `list all files in /etc` triggers AI processing.
+   - You can turn the AI on or off entirely with the "Enable AI assistance"
+     switch in **Settings → AI Settings** (or press **Ctrl+Shift+A**).
+   - Prefix any line with `ai:` to force the assistant even if it resembles a
+     command (`ai: ls -la` will still consult the model).
+   - When AI assistance is disabled or a command is detected, the app simply
+     runs your text as a shell command and shows a system message explaining
+     why the AI was skipped.
 
 ## Examples
 
