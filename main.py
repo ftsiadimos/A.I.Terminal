@@ -794,13 +794,20 @@ class AITerminalWindow(Adw.ApplicationWindow):
     
     def on_show_about(self, button):
         """Show about dialog"""
+        # create the about window; label cannot be customised, only the
+        # URL is shown by default.
         about_dialog = Adw.AboutWindow(transient_for=self)
         about_dialog.set_application_name("AI Terminal Desktop")
-        about_dialog.set_version("2.0.0")
+        # version is synced with the root VERSION file via config.APP_VERSION
+        about_dialog.set_version(config.APP_VERSION)
         about_dialog.set_developer_name("AI Terminal Team")
         about_dialog.set_copyright("© 2026 AI Terminal Desktop")
-        about_dialog.set_comments("An AI-powered terminal interface with SSH support and intelligent command assistance.")
-        about_dialog.set_website("https://github.com/your-repo/aiterminal")
+        # include some descriptive text and then add a proper link
+        about_dialog.set_comments(
+            "An AI-powered terminal interface with SSH support and intelligent command assistance."
+        )
+        # add_link will render as a button/link in the details section
+        about_dialog.add_link("GitHub", "https://github.com/ftsiadimos/A.I.Terminal")
         about_dialog.set_license_type(Gtk.License.MIT_X11)
         about_dialog.present()
     
@@ -1991,6 +1998,10 @@ class AITerminalApp(Adw.Application):
     
     def on_about(self, action, param):
         """Show about dialog"""
+        # note: Adw.AboutWindow does not support a separate label for
+        # the website, so we only set the URL itself here.
+        # the comments field will include a pretty link labelled "GitHub";
+        # the built-in website property is left as the raw URL for clicking.
         about = Adw.AboutWindow(
             transient_for=self.props.active_window,
             application_name="AI Terminal Desktop",
@@ -1998,9 +2009,9 @@ class AITerminalApp(Adw.Application):
             developer_name="Fotios Tsiadimos",
             version=config.APP_VERSION,
             comments="Desktop AI Terminal with SSH and Ollama integration",
-            website="https://github.com/ftsiadimos/aiterminal",
             license_type=Gtk.License.MIT_X11
         )
+        about.add_link("GitHub", "https://github.com/ftsiadimos/A.I.Terminal")
         about.present()
 
 
