@@ -2,7 +2,7 @@
 
 A polished GNOME desktop application (built with GTK4 and Libadwaita) that combines AI-assisted natural-language command execution with a full-featured terminal interface. Execute commands locally or over SSH, stream long-running command output, and receive concise AI analysis to help interpret results. Designed for Fedora and other GNOME-based Linux distributions.
 
-![Screenshot](image.png)
+![Screenshot](image.webp)
 
 ## Table of Contents
 
