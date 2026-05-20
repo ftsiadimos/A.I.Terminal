@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>A.I.Terminal Desktop</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      color: #e2e8f0;
+      background: #0f172a;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    body {
+      margin: 0;
+      padding: 2rem;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      background: radial-gradient(circle at top, rgba(56, 189, 248, 0.15), transparent 30%),
+                  radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.18), transparent 25%),
+                  #0f172a;
+    }
+    main {
+      width: min(100%, 980px);
+      padding: 2.5rem;
+      border-radius: 32px;
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      background: rgba(15, 23, 42, 0.95);
+      box-shadow: 0 30px 80px rgba(15, 23, 42, 0.35);
+    }
+    h1 {
+      margin-top: 0;
+      font-size: clamp(2.2rem, 3.5vw, 3rem);
+      letter-spacing: -0.03em;
+      color: #f8fafc;
+    }
+    h2 {
+      margin: 2.2rem 0 1rem;
+      color: #bfdbfe;
+      font-size: 1.35rem;
+    }
+    p, li {
+      line-height: 1.85;
+      color: #cbd5e1;
+    }
+    ul {
+      padding-left: 1.2rem;
+      margin: 0.75rem 0 0;
+    }
+    li {
+      margin-bottom: 0.5rem;
+    }
+    a {
+      color: #7dd3fc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .hero {
+      display: grid;
+      gap: 1rem;
+    }
+    .buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-top: 1.5rem;
+    }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.95rem 1.4rem;
+      border-radius: 999px;
+      background: linear-gradient(135deg, #38bdf8 0%, #0ea5e9 100%);
+      color: #0f172a;
+      font-weight: 700;
+      text-decoration: none;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 18px 40px rgba(56, 189, 248, 0.18);
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-top: 0.8rem;
+      color: #94a3b8;
+      font-size: 0.95rem;
+    }
+    .section-grid {
+      display: grid;
+      gap: 1.5rem;
+    }
+    .feature-list {
+      display: grid;
+      gap: 0.6rem;
+      margin-top: 0.75rem;
+    }
+    .feature-list li::marker {
+      color: #38bdf8;
+    }
+    .footer {
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(148, 163, 184, 0.12);
+      color: #94a3b8;
+      font-size: 0.95rem;
+    }
+    code {
+      background: rgba(148, 163, 184, 0.12);
+      padding: 0.18rem 0.35rem;
+      border-radius: 0.35rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <h1>A.I.Terminal Desktop</h1>
+      <p>Native GNOME desktop app combining AI-assisted natural language command execution with terminal-style output, SSH connectivity, and Ollama integration.</p>
+      <div class="buttons">
+        <a class="button" href="https://github.com/ftsiadimos/A.I.Terminal" target="_blank" rel="noreferrer noopener">View Repository</a>
+        <a class="button" href="https://github.com/ftsiadimos/A.I.Terminal/tree/main/AIDesktop" target="_blank" rel="noreferrer noopener">Open AIDesktop Folder</a>
+      </div>
+      <div class="badge">Source: <code>AIDesktop/</code> · Publish: <code>AIDesktop/docs/</code></div>
+    </section>
+
+    <section class="section-grid">
+      <div>
+        <h2>Key Features</h2>
+        <ul class="feature-list">
+          <li>Native GTK4 + Libadwaita user interface for GNOME</li>
+          <li>SSH management for local and remote command execution</li>
+          <li>AI-powered natural language prompts via Ollama</li>
+          <li>Live command output streaming with analysis and history</li>
+          <li>Persistent settings and easy re-use across sessions</li>
+        </ul>
+      </div>
+
+      <div>
+        <h2>Getting Started</h2>
+        <p>The easiest way to install is via the prebuilt RPM package in <code>AIDesktop/packaging/</code>, or run the bundled <code>install.sh</code> script for Fedora systems.</p>
+        <p>Once installed, launch the app from the desktop entry or run:</p>
+        <code>python3 AIDesktop/main.py</code>
+      </div>
+    </section>
+
+    <section>
+      <h2>Usage Overview</h2>
+      <p>Use the app to connect to SSH servers, configure Ollama, and send natural language requests. The assistant can execute shell-safe commands automatically or interpret requests like "show disk usage" and translate them into shell actions.</p>
+      <ul class="feature-list">
+        <li>Type plain shell commands to execute directly</li>
+        <li>Use natural language prompts for AI assistance</li>
+        <li>Prefix commands with <code>ai:</code> to force AI processing</li>
+        <li>Toggle AI assistance in settings when needed</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Recommended Setup</h2>
+      <ul class="feature-list">
+        <li>Fedora or GNOME-based Linux distribution</li>
+        <li>Python 3.9+ with GTK4 and PyGObject</li>
+        <li>Ollama installed and serving a compatible model</li>
+        <li>SSH server access for remote execution</li>
+      </ul>
+      <p>Configuration is saved under <code>~/.config/aiterminal-desktop/settings.json</code>.</p>
+    </section>
+
+    <section>
+      <h2>More Info</h2>
+      <p>This site is a landing page for the project documentation and quick-start guidance. For the full README, install instructions, troubleshooting notes, and architecture details, visit the repository.</p>
+      <ul class="feature-list">
+        <li>Installation options: RPM package, automated installer, manual setup</li>
+        <li>Supports Ollama and local AI model execution</li>
+        <li>Designed for terminal power users and developers on GNOME</li>
+      </ul>
+    </section>
+
+    <div class="footer">
+      <p>Open source project by <strong>ftsiadimos</strong>. See the repository for release builds, packaging details, and full documentation.</p>
+      <p>GitHub Pages source: <code>AIDesktop/docs/index.html</code></p>
+    </div>
+  </main>
+</body>
+</html>
